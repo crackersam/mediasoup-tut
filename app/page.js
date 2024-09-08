@@ -1,101 +1,261 @@
-import Image from "next/image";
+"use client";
+import React, { useEffect } from "react";
+import { socket } from "@/socket";
+import * as mediasoup from "mediasoup-client";
 
-export default function Home() {
+const Home = () => {
+  const localVideo = React.useRef(null);
+  const remoteVideo = React.useRef(null);
+  const rtpCapabilities = React.useRef(null);
+  const [params, setParams] = React.useState({
+    // mediasoup params
+    encodings: [
+      {
+        rid: "r0",
+        maxBitrate: 100000,
+        scalabilityMode: "S3T3",
+      },
+      {
+        rid: "r1",
+        maxBitrate: 300000,
+        scalabilityMode: "S3T3",
+      },
+      {
+        rid: "r2",
+        maxBitrate: 900000,
+        scalabilityMode: "S3T3",
+      },
+    ],
+    // https://mediasoup.org/documentation/v3/mediasoup-client/api/#ProducerCodecOptions
+    codecOptions: {
+      videoGoogleStartBitrate: 1000,
+    },
+  });
+  const device = React.useRef(null);
+  const producerTransport = React.useRef(null);
+  const producer = React.useRef(null);
+  const consumerTransport = React.useRef(null);
+  const consumer = React.useRef(null);
+  useEffect(() => {
+    socket.on("connection-success", ({ socketId }) => {
+      console.log(socketId);
+    });
+  }, []);
+
+  const getLocalStream = () => {
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        localVideo.current.srcObject = stream;
+        const track = stream.getVideoTracks()[0];
+        setParams((prev) => ({ ...prev, track }));
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  };
+
+  const getRtpCapabilities = async () => {
+    socket.emit("getRtpCapabilities", (data) => {
+      console.log(data);
+      rtpCapabilities.current = data;
+    });
+  };
+
+  const createDevice = async () => {
+    device.current = new mediasoup.Device();
+    await device.current.load({
+      routerRtpCapabilities: rtpCapabilities.current,
+    });
+    console.log(device.current.rtpCapabilities);
+  };
+
+  const createSendTransport = () => {
+    // see server's socket.on('createWebRtcTransport', sender?, ...)
+    // this is a call from Producer, so sender = true
+    socket.emit("createWebRtcTransport", { sender: true }, ({ params }) => {
+      // The server sends back params needed
+      // to create Send Transport on the client side
+      if (params.error) {
+        console.log(params.error);
+        return;
+      }
+
+      console.log(params);
+
+      // creates a new WebRTC Transport to send media
+      // based on the server's producer transport params
+      // https://mediasoup.org/documentation/v3/mediasoup-client/api/#TransportOptions
+      producerTransport.current = device.current.createSendTransport(params);
+
+      // https://mediasoup.org/documentation/v3/communication-between-client-and-server/#producing-media
+      // this event is raised when a first call to transport.produce() is made
+      // see connectSendTransport() below
+      producerTransport.current.on(
+        "connect",
+        async ({ dtlsParameters }, callback, errback) => {
+          try {
+            // Signal local DTLS parameters to the server side transport
+            // see server's socket.on('transport-connect', ...)
+            await socket.emit("transport-connect", {
+              dtlsParameters,
+            });
+
+            // Tell the transport that parameters were transmitted.
+            callback();
+          } catch (error) {
+            errback(error);
+          }
+        }
+      );
+
+      producerTransport.current.on(
+        "produce",
+        async (parameters, callback, errback) => {
+          console.log(parameters);
+
+          try {
+            // tell the server to create a Producer
+            // with the following parameters and produce
+            // and expect back a server side producer id
+            // see server's socket.on('transport-produce', ...)
+            await socket.emit(
+              "transport-produce",
+              {
+                kind: parameters.kind,
+                rtpParameters: parameters.rtpParameters,
+                appData: parameters.appData,
+              },
+              ({ id }) => {
+                // Tell the transport that parameters were transmitted and provide it with the
+                // server side producer's id.
+                callback({ id });
+              }
+            );
+          } catch (error) {
+            errback(error);
+          }
+        }
+      );
+    });
+  };
+
+  const connectSendTransport = async () => {
+    // we now call produce() to instruct the producer transport
+    // to send media to the Router
+    // https://mediasoup.org/documentation/v3/mediasoup-client/api/#transport-produce
+    // this action will trigger the 'connect' and 'produce' events above
+    producer.current = await producerTransport.current.produce(params);
+
+    producer.current.on("trackended", () => {
+      console.log("track ended");
+
+      // close video track
+    });
+
+    producer.current.on("transportclose", () => {
+      console.log("transport ended");
+
+      // close video track
+    });
+  };
+
+  const createRecvTransport = async () => {
+    // see server's socket.on('consume', sender?, ...)
+    // this is a call from Consumer, so sender = false
+    await socket.emit(
+      "createWebRtcTransport",
+      { sender: false },
+      ({ params }) => {
+        // The server sends back params needed
+        // to create Send Transport on the client side
+        if (params.error) {
+          console.log(params.error);
+          return;
+        }
+
+        console.log(params);
+
+        // creates a new WebRTC Transport to receive media
+        // based on server's consumer transport params
+        // https://mediasoup.org/documentation/v3/mediasoup-client/api/#device-createRecvTransport
+        consumerTransport.current = device.current.createRecvTransport(params);
+
+        // https://mediasoup.org/documentation/v3/communication-between-client-and-server/#producing-media
+        // this event is raised when a first call to transport.produce() is made
+        // see connectRecvTransport() below
+        consumerTransport.current.on(
+          "connect",
+          async ({ dtlsParameters }, callback, errback) => {
+            try {
+              // Signal local DTLS parameters to the server side transport
+              // see server's socket.on('transport-recv-connect', ...)
+              await socket.emit("transport-recv-connect", {
+                dtlsParameters,
+              });
+
+              // Tell the transport that parameters were transmitted.
+              callback();
+            } catch (error) {
+              // Tell the transport that something was wrong
+              errback(error);
+            }
+          }
+        );
+      }
+    );
+  };
+
+  const connectRecvTransport = async () => {
+    // for consumer, we need to tell the server first
+    // to create a consumer based on the rtpCapabilities and consume
+    // if the router can consume, it will send back a set of params as below
+    await socket.emit(
+      "consume",
+      {
+        rtpCapabilities: device.current.rtpCapabilities,
+      },
+      async ({ params }) => {
+        if (params.error) {
+          console.log("Cannot Consume");
+          return;
+        }
+
+        console.log(params);
+        // then consume with the local consumer transport
+        // which creates a consumer
+        consumer.current = await consumerTransport.current.consume({
+          id: params.id,
+          producerId: params.producerId,
+          kind: params.kind,
+          rtpParameters: params.rtpParameters,
+        });
+
+        // destructure and retrieve the video track from the producer
+        const { track } = consumer.current;
+
+        remoteVideo.current.srcObject = new MediaStream([track]);
+
+        // the server consumer started with media paused
+        // so we need to inform the server to resume
+        socket.emit("consumer-resume");
+      }
+    );
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+    <div>
+      <button onClick={getLocalStream}>getLocalStream</button>
+      <button onClick={getRtpCapabilities}>getRtpCapabilities</button>
+      <button onClick={createDevice}>createDevice</button>
+      <button onClick={createSendTransport}>createSendTransport</button>
+      <button onClick={connectSendTransport}>connectSendTransport</button>
+      <button onClick={createRecvTransport}>createRecvTransport</button>
+      <button onClick={connectRecvTransport}>connectRecvTransport</button>
+      <video ref={localVideo} autoPlay muted controls />
+      <video ref={remoteVideo} autoPlay controls />
     </div>
   );
-}
+};
+
+export default Home;
