@@ -65,18 +65,34 @@ app.prepare().then(() => {
     },
   ];
   io.on("connection", async (socket) => {
-    socket.emit("connection-success", { socketId: socket.id });
+    socket.emit("connection-success", {
+      socketId: socket.id,
+      existsProducer: producer ? true : false,
+    });
 
     socket.on("disconnect", () => {
       console.log("user disconnected");
     });
 
-    router = await worker.createRouter({ mediaCodecs });
+    socket.on("createRoom", async (callback) => {
+      if (router === undefined) {
+        // worker.createRouter(options)
+        // options = { mediaCodecs, appData }
+        // mediaCodecs -> defined above
+        // appData -> custom application data - we are not supplying any
+        // none of the two are required
+        router = await worker.createRouter({ mediaCodecs });
+        console.log(`Router ID: ${router.id}`);
+      }
 
-    socket.on("getRtpCapabilities", (callback) => {
-      console.log(router.rtpCapabilities);
-      callback(router.rtpCapabilities);
+      getRtpCapabilities(callback);
     });
+
+    const getRtpCapabilities = (callback) => {
+      const rtpCapabilities = router.rtpCapabilities;
+
+      callback({ rtpCapabilities });
+    };
 
     socket.on("createWebRtcTransport", async ({ sender }, callback) => {
       console.log(`Is this a sender request? ${sender}`);

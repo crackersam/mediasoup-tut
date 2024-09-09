@@ -7,7 +7,7 @@ const Home = () => {
   const localVideo = React.useRef(null);
   const remoteVideo = React.useRef(null);
   const rtpCapabilities = React.useRef(null);
-  const [params, setParams] = React.useState({
+  const params = React.useRef({
     // mediasoup params
     encodings: [
       {
@@ -36,9 +36,10 @@ const Home = () => {
   const producer = React.useRef(null);
   const consumerTransport = React.useRef(null);
   const consumer = React.useRef(null);
+  const isProducer = React.useRef(false);
   useEffect(() => {
-    socket.on("connection-success", ({ socketId }) => {
-      console.log(socketId);
+    socket.on("connection-success", ({ socketId, existsProducer }) => {
+      console.log(`Connected with socketId: ${socketId}, ${existsProducer}`);
     });
   }, []);
 
@@ -48,17 +49,31 @@ const Home = () => {
       .then((stream) => {
         localVideo.current.srcObject = stream;
         const track = stream.getVideoTracks()[0];
-        setParams((prev) => ({ ...prev, track }));
+        params.current.track = track;
+        goConnect(true);
       })
       .catch((err) => {
         console.error(err);
       });
   };
+  const goConsume = () => {
+    goConnect(false);
+  };
+
+  const goConnect = (producerOrConsumer) => {
+    isProducer.current = producerOrConsumer;
+    !device.current ? getRtpCapabilities() : goCreateTransport();
+  };
+
+  const goCreateTransport = () => {
+    isProducer.current ? createSendTransport() : createRecvTransport();
+  };
 
   const getRtpCapabilities = async () => {
-    socket.emit("getRtpCapabilities", (data) => {
+    socket.emit("createRoom", (data) => {
       console.log(data);
-      rtpCapabilities.current = data;
+      rtpCapabilities.current = data.rtpCapabilities;
+      createDevice();
     });
   };
 
@@ -68,6 +83,7 @@ const Home = () => {
       routerRtpCapabilities: rtpCapabilities.current,
     });
     console.log(device.current.rtpCapabilities);
+    goCreateTransport();
   };
 
   const createSendTransport = () => {
@@ -137,6 +153,7 @@ const Home = () => {
           }
         }
       );
+      connectSendTransport();
     });
   };
 
@@ -145,7 +162,7 @@ const Home = () => {
     // to send media to the Router
     // https://mediasoup.org/documentation/v3/mediasoup-client/api/#transport-produce
     // this action will trigger the 'connect' and 'produce' events above
-    producer.current = await producerTransport.current.produce(params);
+    producer.current = await producerTransport.current.produce(params.current);
 
     producer.current.on("trackended", () => {
       console.log("track ended");
@@ -202,6 +219,7 @@ const Home = () => {
             }
           }
         );
+        connectRecvTransport();
       }
     );
   };
@@ -245,13 +263,8 @@ const Home = () => {
 
   return (
     <div>
-      <button onClick={getLocalStream}>getLocalStream</button>
-      <button onClick={getRtpCapabilities}>getRtpCapabilities</button>
-      <button onClick={createDevice}>createDevice</button>
-      <button onClick={createSendTransport}>createSendTransport</button>
-      <button onClick={connectSendTransport}>connectSendTransport</button>
-      <button onClick={createRecvTransport}>createRecvTransport</button>
-      <button onClick={connectRecvTransport}>connectRecvTransport</button>
+      <button onClick={getLocalStream}>Publish</button>
+      <button onClick={goConsume}>Consume</button>
       <video ref={localVideo} autoPlay muted controls />
       <video ref={remoteVideo} autoPlay controls />
     </div>
