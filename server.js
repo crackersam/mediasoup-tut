@@ -24,10 +24,9 @@ app.prepare().then(() => {
 
   let worker;
   let router;
-  let producerTransport;
-  let consumerTransport;
-  let producer;
-  let consumer;
+  let transports = [];
+  let producers = [];
+  let consumers = [];
 
   const createWorker = async () => {
     worker = await mediasoup.createWorker({
@@ -67,7 +66,7 @@ app.prepare().then(() => {
   io.on("connection", async (socket) => {
     socket.emit("connection-success", {
       socketId: socket.id,
-      existsProducer: producer ? true : false,
+      existsProducer: producers.length > 0 ? true : false,
     });
 
     socket.on("disconnect", () => {
@@ -98,20 +97,29 @@ app.prepare().then(() => {
       console.log(`Is this a sender request? ${sender}`);
       // The client indicates if it is a producer or a consumer
       // if sender is true, indicates a producer else a consumer
-      if (sender) producerTransport = await createWebRtcTransport(callback);
-      else consumerTransport = await createWebRtcTransport(callback);
+      transports = [
+        ...transports,
+        {
+          socketId: socket.id,
+          transport: await createWebRtcTransport(callback),
+        },
+      ];
     });
 
     socket.on("transport-connect", async ({ dtlsParameters }) => {
       console.log("DTLS PARAMS... ", { dtlsParameters });
-      await producerTransport.connect({ dtlsParameters });
+      await transports[
+        transports.findIndex((obj) => obj.socketId == socket.id)
+      ].transport.connect({ dtlsParameters });
     });
 
     socket.on(
       "transport-produce",
       async ({ kind, rtpParameters, appData }, callback) => {
         // call produce based on the prameters from the client
-        producer = await producerTransport.produce({
+        let producer = await transports[
+          transports.findIndex((obj) => obj.socketId == socket.id)
+        ].transport.produce({
           kind,
           rtpParameters,
         });
@@ -123,6 +131,8 @@ app.prepare().then(() => {
           producer.close();
         });
 
+        producers = [...producers, { socketId: socket.id, producer }];
+
         // Send back to the client the Producer's id
         callback({
           id: producer.id,
@@ -132,7 +142,9 @@ app.prepare().then(() => {
 
     socket.on("transport-recv-connect", async ({ dtlsParameters }) => {
       console.log(`DTLS PARAMS: ${dtlsParameters}`);
-      await consumerTransport.connect({ dtlsParameters });
+      await transports[
+        transports.findIndex((obj) => obj.socketId == socket.id)
+      ].transport.connect({ dtlsParameters });
     });
 
     socket.on("consume", async ({ rtpCapabilities }, callback) => {
@@ -140,13 +152,19 @@ app.prepare().then(() => {
         // check if the router can consume the specified producer
         if (
           router.canConsume({
-            producerId: producer.id,
+            producerId:
+              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
+                .producer.id,
             rtpCapabilities,
           })
         ) {
           // transport can now consume and return a consumer
-          consumer = await consumerTransport.consume({
-            producerId: producer.id,
+          const consumer = await transports[
+            transports.findIndex((obj) => obj.socketId == socket.id)
+          ].transport.consume({
+            producerId:
+              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
+                .producer.id,
             rtpCapabilities,
             paused: true,
           });
@@ -163,10 +181,14 @@ app.prepare().then(() => {
           // to send back to the Client
           const params = {
             id: consumer.id,
-            producerId: producer.id,
+            producerId:
+              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
+                .producer.id,
             kind: consumer.kind,
             rtpParameters: consumer.rtpParameters,
           };
+
+          consumers = [...consumers, { socketId: socket.id, consumer }];
 
           // send the parameters to the client
           callback({ params });
@@ -183,7 +205,9 @@ app.prepare().then(() => {
 
     socket.on("consumer-resume", async () => {
       console.log("consumer resume");
-      await consumer.resume();
+      await consumers[
+        consumers.findIndex((obj) => obj.socketId == socket.id)
+      ].consumer.resume();
     });
 
     const createWebRtcTransport = async (callback) => {
