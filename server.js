@@ -139,6 +139,10 @@ app.prepare().then(() => {
         });
       }
     );
+    socket.on("getProducers", (callback) => {
+      const producerIds = producers.map((p) => [p.producer.id]);
+      callback(producerIds);
+    });
 
     socket.on("transport-recv-connect", async ({ dtlsParameters }) => {
       console.log(`DTLS PARAMS: ${dtlsParameters}`);
@@ -147,14 +151,12 @@ app.prepare().then(() => {
       ].transport.connect({ dtlsParameters });
     });
 
-    socket.on("consume", async ({ rtpCapabilities }, callback) => {
+    socket.on("consume", async ({ rtpCapabilities, producerId }, callback) => {
       try {
         // check if the router can consume the specified producer
         if (
           router.canConsume({
-            producerId:
-              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
-                .producer.id,
+            producerId: producerId,
             rtpCapabilities,
           })
         ) {
@@ -162,9 +164,7 @@ app.prepare().then(() => {
           const consumer = await transports[
             transports.findIndex((obj) => obj.socketId == socket.id)
           ].transport.consume({
-            producerId:
-              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
-                .producer.id,
+            producerId: producerId,
             rtpCapabilities,
             paused: true,
           });
@@ -181,9 +181,7 @@ app.prepare().then(() => {
           // to send back to the Client
           const params = {
             id: consumer.id,
-            producerId:
-              producers[producers.findIndex((obj) => obj.socketId != socket.id)]
-                .producer.id,
+            producerId: producerId,
             kind: consumer.kind,
             rtpParameters: consumer.rtpParameters,
           };
