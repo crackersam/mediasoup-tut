@@ -101,6 +101,7 @@ app.prepare().then(() => {
         ...transports,
         {
           socketId: socket.id,
+          sender,
           transport: await createWebRtcTransport(callback),
         },
       ];
@@ -109,7 +110,7 @@ app.prepare().then(() => {
     socket.on("transport-connect", async ({ dtlsParameters }) => {
       console.log("DTLS PARAMS... ", { dtlsParameters });
       await transports[
-        transports.findIndex((obj) => obj.socketId == socket.id)
+        transports.findIndex((obj) => obj.socketId == socket.id && obj.sender)
       ].transport.connect({ dtlsParameters });
     });
 
@@ -147,7 +148,7 @@ app.prepare().then(() => {
     socket.on("transport-recv-connect", async ({ dtlsParameters }) => {
       console.log(`DTLS PARAMS: ${dtlsParameters}`);
       await transports[
-        transports.findIndex((obj) => obj.socketId == socket.id)
+        transports.findIndex((obj) => obj.socketId == socket.id && !obj.sender)
       ].transport.connect({ dtlsParameters });
     });
 
