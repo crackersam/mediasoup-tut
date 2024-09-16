@@ -258,14 +258,14 @@ const Home = () => {
         console.log(params);
         // then consume with the local consumer transport
         // which creates a consumer
-        const consumer = await consumerTransport.consume({
+        let consumer = await consumerTransport.consume({
           id: params.id,
           producerId: params.producerId,
           kind: params.kind,
           rtpParameters: params.rtpParameters,
         });
-        setConsumerTransports([
-          ...consumerTransports,
+        setConsumerTransports((prevTransports) => [
+          ...prevTransports,
           { consumerTransport, consumer, producerId },
         ]);
       }
