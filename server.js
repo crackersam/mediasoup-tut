@@ -99,15 +99,13 @@ app.prepare().then(() => {
         console.log(`Is this a sender request? ${sender}`);
         // The client indicates if it is a producer or a consumer
         // if sender is true, indicates a producer else a consumer
-        transports = [
-          ...transports,
-          {
-            socketId: socket.id,
-            sender,
-            producerId,
-            transport: await createWebRtcTransport(callback),
-          },
-        ];
+        const newTransport = {
+          socketId: socket.id,
+          sender,
+          producerId,
+          transport: await createWebRtcTransport(callback),
+        };
+        transports = [...transports, newTransport];
       }
     );
 
@@ -176,13 +174,23 @@ app.prepare().then(() => {
             rtpCapabilities,
           })
         ) {
+          transports.forEach((transport, index) => {
+            console.log(`--Transport ${index + 1}:`);
+            console.log(`Producer ID: ${transport.producerId}`);
+            console.log(`Sender: ${transport.sender}`);
+            console.log(`current producerId: ${producerId}`);
+            console.log("---------------------");
+          });
+          console.log(
+            "---------------------|" +
+              transports.findIndex(
+                (obj) => !obj.sender && obj.producerId == producerId
+              )
+          );
           // transport can now consume and return a consumer
           const consumer = await transports[
             transports.findIndex(
-              (obj) =>
-                obj.socketId == socket.id &&
-                !obj.sender &&
-                obj.producerId == producerId
+              (obj) => !obj.sender && obj.producerId == producerId
             )
           ].transport.consume({
             producerId: producerId,
@@ -207,13 +215,16 @@ app.prepare().then(() => {
             rtpParameters: consumer.rtpParameters,
           };
 
-          consumers = [...consumers, { socketId: socket.id, consumer }];
+          consumers = [
+            ...consumers,
+            { socketId: socket.id, producerId, consumer },
+          ];
 
           // send the parameters to the client
           callback({ params });
         }
       } catch (error) {
-        console.log(error.message);
+        console.log(error.message, error.stack);
         callback({
           params: {
             error: error,
@@ -223,11 +234,10 @@ app.prepare().then(() => {
     });
 
     socket.on("consumer-resume", async ({ producerId }) => {
-      console.log("consumer resume");
+      console.log("consumer resume: ", producerId);
       await consumers[
         consumers.findIndex(
-          (obj) =>
-            obj.socketId == socket.id && obj.consumer.producerId == producerId
+          (obj) => obj.socketId == socket.id && obj.producerId == producerId
         )
       ].consumer.resume();
     });
