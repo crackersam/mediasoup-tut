@@ -184,13 +184,19 @@ app.prepare().then(() => {
           console.log(
             "---------------------|" +
               transports.findIndex(
-                (obj) => !obj.sender && obj.producerId == producerId
+                (obj) =>
+                  !obj.sender &&
+                  obj.producerId == producerId &&
+                  socket.id == obj.socketId
               )
           );
           // transport can now consume and return a consumer
           const consumer = await transports[
             transports.findIndex(
-              (obj) => !obj.sender && obj.producerId == producerId
+              (obj) =>
+                !obj.sender &&
+                obj.producerId == producerId &&
+                socket.id == obj.socketId
             )
           ].transport.consume({
             producerId: producerId,
@@ -235,6 +241,12 @@ app.prepare().then(() => {
 
     socket.on("consumer-resume", async ({ producerId }) => {
       console.log("consumer resume: ", producerId);
+      console.log("length of consumers array: ", consumers.length);
+      console.log(
+        consumers.findIndex(
+          (obj) => obj.socketId == socket.id && obj.producerId == producerId
+        )
+      );
       await consumers[
         consumers.findIndex(
           (obj) => obj.socketId == socket.id && obj.producerId == producerId
