@@ -9,7 +9,9 @@ const Consumer = ({ consumerTransport, socket }) => {
 
     videoRef.current.srcObject = new MediaStream([track]);
 
-    socket.emit("consumer-resume");
+    socket.emit("consumer-resume", {
+      producerId: consumerTransport.producerId,
+    });
     runOnce.current = true;
   }, []);
   return <video ref={videoRef} autoPlay controls playsInline />;

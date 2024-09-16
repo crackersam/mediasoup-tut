@@ -71,7 +71,9 @@ const Home = () => {
 
   const getProducers = () => {
     socket.emit("getProducers", async (data) => {
-      console.log(data);
+      data.forEach((producerId, i) => {
+        console.log(i, producerId.toString());
+      });
       if (data.length > 0) {
         data.forEach((producerId) => {
           createRecvTransport(producerId.toString());
@@ -191,45 +193,50 @@ const Home = () => {
   const createRecvTransport = async (producerId) => {
     // see server's socket.on('consume', sender?, ...)
     // this is a call from Consumer, so sender = false
-    socket.emit("createWebRtcTransport", { sender: false }, ({ params }) => {
-      // The server sends back params needed
-      // to create Send Transport on the client side
-      if (params.error) {
-        console.log(params.error);
-        return;
-      }
-
-      console.log(params);
-      console.log(producerId);
-
-      // creates a new WebRTC Transport to receive media
-      // based on server's consumer transport params
-      // https://mediasoup.org/documentation/v3/mediasoup-client/api/#device-createRecvTransport
-      let consumerTransport = device.current.createRecvTransport(params);
-
-      // https://mediasoup.org/documentation/v3/communication-between-client-and-server/#producing-media
-      // this event is raised when a first call to transport.produce() is made
-      // see connectRecvTransport() below
-      consumerTransport.on(
-        "connect",
-        async ({ dtlsParameters }, callback, errback) => {
-          try {
-            // Signal local DTLS parameters to the server side transport
-            // see server's socket.on('transport-recv-connect', ...)
-            await socket.emit("transport-recv-connect", {
-              dtlsParameters,
-            });
-
-            // Tell the transport that parameters were transmitted.
-            callback();
-          } catch (error) {
-            // Tell the transport that something was wrong
-            errback(error);
-          }
+    socket.emit(
+      "createWebRtcTransport",
+      { sender: false, producerId },
+      ({ params }) => {
+        // The server sends back params needed
+        // to create Send Transport on the client side
+        if (params.error) {
+          console.log(params.error);
+          return;
         }
-      );
-      connectRecvTransport(consumerTransport, producerId);
-    });
+
+        console.log(params);
+        console.log(producerId);
+
+        // creates a new WebRTC Transport to receive media
+        // based on server's consumer transport params
+        // https://mediasoup.org/documentation/v3/mediasoup-client/api/#device-createRecvTransport
+        let consumerTransport = device.current.createRecvTransport(params);
+
+        // https://mediasoup.org/documentation/v3/communication-between-client-and-server/#producing-media
+        // this event is raised when a first call to transport.produce() is made
+        // see connectRecvTransport() below
+        consumerTransport.on(
+          "connect",
+          async ({ dtlsParameters }, callback, errback) => {
+            try {
+              // Signal local DTLS parameters to the server side transport
+              // see server's socket.on('transport-recv-connect', ...)
+              await socket.emit("transport-recv-connect", {
+                dtlsParameters,
+                producerId,
+              });
+
+              // Tell the transport that parameters were transmitted.
+              callback();
+            } catch (error) {
+              // Tell the transport that something was wrong
+              errback(error);
+            }
+          }
+        );
+        connectRecvTransport(consumerTransport, producerId);
+      }
+    );
   };
 
   const connectRecvTransport = async (consumerTransport, producerId) => {
@@ -259,7 +266,7 @@ const Home = () => {
         });
         setConsumerTransports([
           ...consumerTransports,
-          { consumerTransport, consumer },
+          { consumerTransport, consumer, producerId },
         ]);
       }
     );

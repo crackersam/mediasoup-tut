@@ -93,24 +93,31 @@ app.prepare().then(() => {
       callback({ rtpCapabilities });
     };
 
-    socket.on("createWebRtcTransport", async ({ sender }, callback) => {
-      console.log(`Is this a sender request? ${sender}`);
-      // The client indicates if it is a producer or a consumer
-      // if sender is true, indicates a producer else a consumer
-      transports = [
-        ...transports,
-        {
-          socketId: socket.id,
-          sender,
-          transport: await createWebRtcTransport(callback),
-        },
-      ];
-    });
+    socket.on(
+      "createWebRtcTransport",
+      async ({ sender, producerId }, callback) => {
+        console.log(`Is this a sender request? ${sender}`);
+        // The client indicates if it is a producer or a consumer
+        // if sender is true, indicates a producer else a consumer
+        transports = [
+          ...transports,
+          {
+            socketId: socket.id,
+            sender,
+            producerId,
+            transport: await createWebRtcTransport(callback),
+          },
+        ];
+      }
+    );
 
     socket.on("transport-connect", async ({ dtlsParameters }) => {
       console.log("DTLS PARAMS... ", { dtlsParameters });
       await transports[
-        transports.findIndex((obj) => obj.socketId == socket.id && obj.sender)
+        transports.findIndex(
+          (obj) =>
+            obj.socketId == socket.id && obj.sender && !obj.transport.consumer
+        )
       ].transport.connect({ dtlsParameters });
     });
 
@@ -145,12 +152,20 @@ app.prepare().then(() => {
       callback(producerIds);
     });
 
-    socket.on("transport-recv-connect", async ({ dtlsParameters }) => {
-      console.log(`DTLS PARAMS: ${dtlsParameters}`);
-      await transports[
-        transports.findIndex((obj) => obj.socketId == socket.id && !obj.sender)
-      ].transport.connect({ dtlsParameters });
-    });
+    socket.on(
+      "transport-recv-connect",
+      async ({ dtlsParameters, producerId }) => {
+        console.log(`DTLS PARAMS: ${dtlsParameters}`);
+        await transports[
+          transports.findIndex(
+            (obj) =>
+              obj.socketId == socket.id &&
+              !obj.sender &&
+              obj.producerId == producerId
+          )
+        ].transport.connect({ dtlsParameters });
+      }
+    );
 
     socket.on("consume", async ({ rtpCapabilities, producerId }, callback) => {
       try {
@@ -163,7 +178,12 @@ app.prepare().then(() => {
         ) {
           // transport can now consume and return a consumer
           const consumer = await transports[
-            transports.findIndex((obj) => obj.socketId == socket.id)
+            transports.findIndex(
+              (obj) =>
+                obj.socketId == socket.id &&
+                !obj.sender &&
+                obj.producerId == producerId
+            )
           ].transport.consume({
             producerId: producerId,
             rtpCapabilities,
@@ -202,10 +222,13 @@ app.prepare().then(() => {
       }
     });
 
-    socket.on("consumer-resume", async () => {
+    socket.on("consumer-resume", async ({ producerId }) => {
       console.log("consumer resume");
       await consumers[
-        consumers.findIndex((obj) => obj.socketId == socket.id)
+        consumers.findIndex(
+          (obj) =>
+            obj.socketId == socket.id && obj.consumer.producerId == producerId
+        )
       ].consumer.resume();
     });
 
