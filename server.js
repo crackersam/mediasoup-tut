@@ -74,9 +74,12 @@ app.prepare().then(() => {
         producers[producers.findIndex((obj) => obj.socketId == socket.id)]
           ?.producer.id;
       socket.broadcast.emit("producer-remove", producerId);
-      // producers = producers.filter((obj) => obj.socketId !== socket.id);
-      // consumers = consumers.filter((obj) => obj.socketId !== socket.id);
-      // transports = transports.filter((obj) => obj.socketId !== socket.id);
+      producers = producers.filter((obj) => obj.socketId !== socket.id);
+      consumers = consumers.filter((obj) => obj.producerId !== producerId);
+      transports = transports.filter((obj) => obj.producerId !== producerId);
+      console.log("length of producers array: ", producers.length);
+      console.log("length of consumers array: ", consumers.length);
+      console.log("length of transports array: ", transports.length);
       console.log("user disconnected ", producerId);
     });
 
