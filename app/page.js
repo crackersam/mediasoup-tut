@@ -41,6 +41,20 @@ const Home = () => {
     socket.on("connection-success", ({ socketId, existsProducer }) => {
       console.log(`Connected with socketId: ${socketId}, ${existsProducer}`);
     });
+    socket.on("producer-remove", (producerId) => {
+      setConsumerTransports((prevTransports) => {
+        const newTransports = [...prevTransports];
+        const index = newTransports.findIndex(
+          (transport) => transport?.producerId === producerId
+        );
+        if (index !== -1) {
+          newTransports[index].consumerTransport.close();
+          newTransports[index] = undefined;
+        }
+
+        return newTransports;
+      });
+    });
   }, []);
 
   const getLocalStream = () => {

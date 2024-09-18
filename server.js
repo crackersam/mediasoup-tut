@@ -70,7 +70,14 @@ app.prepare().then(() => {
     });
 
     socket.on("disconnect", () => {
-      console.log("user disconnected");
+      const producerId =
+        producers[producers.findIndex((obj) => obj.socketId == socket.id)]
+          ?.producer.id;
+      socket.broadcast.emit("producer-remove", producerId);
+      // producers = producers.filter((obj) => obj.socketId !== socket.id);
+      // consumers = consumers.filter((obj) => obj.socketId !== socket.id);
+      // transports = transports.filter((obj) => obj.socketId !== socket.id);
+      console.log("user disconnected ", producerId);
     });
 
     socket.on("createRoom", async (callback) => {
