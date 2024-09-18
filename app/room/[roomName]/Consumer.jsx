@@ -14,7 +14,12 @@ const Consumer = ({ consumerTransport, socket }) => {
     });
     runOnce.current = true;
   }, []);
-  return <video ref={videoRef} autoPlay controls playsInline />;
+  return (
+    <div className="flex flex-col w-1/5">
+      <video ref={videoRef} autoPlay controls playsInline />
+      <div className="text-black bg-white">{consumerTransport.producerId}</div>
+    </div>
+  );
 };
 
 export default Consumer;
