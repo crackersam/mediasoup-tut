@@ -32,9 +32,11 @@ const Home = () => {
       videoGoogleStartBitrate: 1000,
     },
   });
+  const audioParams = React.useRef({});
   const device = React.useRef(null);
   const producerTransport = React.useRef(null);
   const producer = React.useRef(null);
+  const audioProducer = React.useRef(null);
   const [consumerTransports, setConsumerTransports] = React.useState([]);
   const isProducer = React.useRef(false);
   const isConsuming = React.useRef(false);
@@ -71,6 +73,8 @@ const Home = () => {
       .then((stream) => {
         localVideo.current.srcObject = stream;
         const track = stream.getVideoTracks()[0];
+        const audioTrack = stream.getAudioTracks()[0];
+        audioParams.current.track = audioTrack;
         params.current.track = track;
         goConnect(true);
       })
@@ -200,6 +204,21 @@ const Home = () => {
     // https://mediasoup.org/documentation/v3/mediasoup-client/api/#transport-produce
     // this action will trigger the 'connect' and 'produce' events above
     producer.current = await producerTransport.current.produce(params.current);
+    audioProducer.current = await producerTransport.current.produce(
+      audioParams.current
+    );
+
+    audioProducer.current.on("trackended", () => {
+      console.log("audio track ended");
+
+      // close audio track
+    });
+
+    audioProducer.current.on("transportclose", () => {
+      console.log("audio transport ended");
+
+      // close audio track
+    });
 
     producer.current.on("trackended", () => {
       console.log("track ended");
