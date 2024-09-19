@@ -37,7 +37,10 @@ const Home = () => {
   const producer = React.useRef(null);
   const [consumerTransports, setConsumerTransports] = React.useState([]);
   const isProducer = React.useRef(false);
+  const isConsuming = React.useRef(false);
+  const runOnce = React.useRef(false);
   useEffect(() => {
+    if (runOnce.current) return;
     socket.on("connection-success", ({ socketId, existsProducer }) => {
       console.log(`Connected with socketId: ${socketId}, ${existsProducer}`);
     });
@@ -55,6 +58,11 @@ const Home = () => {
         return newTransports;
       });
     });
+    socket.on("producer-add", (producerId) => {
+      console.log("producer-add", producerId, isConsuming.current);
+      if (isConsuming.current) createRecvTransport(producerId);
+    });
+    runOnce.current = true;
   }, []);
 
   const getLocalStream = () => {
@@ -92,6 +100,7 @@ const Home = () => {
         data.forEach((producerId) => {
           createRecvTransport(producerId.toString());
         });
+        isConsuming.current = true;
       }
     });
   };
