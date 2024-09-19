@@ -92,6 +92,7 @@ const Home = () => {
   };
 
   const getProducers = () => {
+    if (isConsuming.current) return;
     socket.emit("getProducers", async (data) => {
       data.forEach((producerId, i) => {
         console.log(i, producerId.toString());
